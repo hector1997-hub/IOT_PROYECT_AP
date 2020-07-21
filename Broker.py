@@ -153,7 +153,7 @@ def main():
     subproceso_luces.start()
     signal.pause()
 
-    
+    print
 
     
 
