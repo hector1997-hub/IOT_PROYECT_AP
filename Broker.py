@@ -1,7 +1,6 @@
 import sys
 from time import sleep
 import signal
-from gpiozero import LED, Button
 from threading import Thread
 import firebase_admin
 from firebase_admin import credentials
@@ -14,15 +13,15 @@ import paho.mqtt.client
 
 FLAGS_VALVS = {"VALVI":"FALSE","VALVR":"FALSE","LIGTH":"FALSE"}
 
-
-
-
 #########VARIABLES FIREBASE ###########################
-PAHT_CRED = '/home/pi/Desktop/IOT/culterapp.json'
+PAHT_CRED = '/home/pi/IOT_PROYECT_AP/culterapp.json'
 URL_DB = 'https://culterapp.firebaseio.com/'
 REF_CULT='CULTIVO'
 REF_LUZ = 'LUCES'
-REF_TIPO='TIPO'
+REF_TIPO1='TIPO1'
+REF_TIPO2='TIPO2'
+REF_TIPO3='TIPO3'
+
 REF_SENS = 'SENSORES'
 REF_SENSOR1= 'SENSOR1'
 REF_SENSOR2='SENSOR2'
@@ -30,11 +29,16 @@ REF_SENSOR3='SENSOR3'
 REF_SENS_N = 'SENSORES_NIVEL'
 REF_SN1='S_N1'
 REF_SN2='S_N2'
+
+REF_TIME='TIEMPO'
+REF_ACTP='PREESCRIBIR'
+REF_PRES='PRESCRIPCION'
+REF_HORA="HORA"
+REF_RIEGO='RIEGO'
+
 REF_USER = 'USERS'
 REF_PASS1='PASSWORD1'
 REF_USER1='USER1'
-
-
 REF_VALVSI = 'VALVULAS_I'
 REF_VALVSR= 'VALVULAS_R'
 REF_VAL1='VALVULA_I'
@@ -63,7 +67,9 @@ class FIREB():
         self.refcultivo=db.reference(REF_CULT)
 
         self.refluz = self.refcultivo.child(REF_LUZ)
-        self.reftipo = self.refluz.child(REF_TIPO)
+        self.reftipo1 = self.refluz.child(REF_TIPO1)
+        self.reftipo2 = self.refluz.child(REF_TIPO2)
+        self.reftipo3 = self.refluz.child(REF_TIPO3)
 
         self.refsens=self.refcultivo.child(REF_SENS)
         self.refsens1=self.refsens.child(REF_SENSOR1)    
@@ -73,6 +79,12 @@ class FIREB():
         self.refsens_niv=self.refcultivo.child(REF_SENS_N)
         self.refsn1=self.refsens_niv.child(REF_SN1)
         self.refsn2=self.refsens_niv.child(REF_SN2)
+
+        self.reftime=self.refcultivo.child(REF_TIME)
+        self.refhora=self.reftime.child(REF_HORA)
+        self.refpres=self.reftime.child(REF_PRES)
+        self.refactp=self.reftime.child(REF_ACTP)
+        self.refriego=self.reftime.child(REF_RIEGO)
 
         self.refuser=self.refcultivo.child(REF_USER)
         self.refp_1=self.refsens_niv.child(REF_PASS1)
@@ -85,22 +97,32 @@ class FIREB():
         self.refvalr=self.refvalvsr.child(REF_VAL2)
 
 
-        client =paho.mqtt.client.Client(client_id='ESTACION_P', clean_session=False)
-        client.on_connect = self.on_connect
-        client.on_message = self.on_message
-        client.connect(host='192.168.1.64', port=1883)
-        client.loop_start()
+        self.client =paho.mqtt.client.Client(client_id='ESTACION_P', clean_session=False)
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+        self.client.connect(host='192.168.1.64', port=1883)
+        self.client.loop_start()
 
 
     def LUCES(self):
-        estado_anterior = self.reftipo.get()
-
+        estado_ant1 = self.reftipo1.get()
+        estado_ant2 = self.reftipo2.get()
+        estado_ant3 = self.reftipo3.get()
         while True:
-            estado_actual = self.reftipo.get() #peticion
-            if estado_actual!= estado_anterior:
-                print('luces = '+ str(estado_actual)) 
-                
-            estado_anterior=estado_actual    
+            estado_act1 = self.reftipo1.get() #peticion
+            estado_act2 = self.reftipo2.get() #peticion
+            estado_act3 = self.reftipo3.get() #peticion
+            if estado_act1!= estado_ant1:
+                self.client.publish('LUCES/TIPO1',estado_act1)
+            elif estado_act2!= estado_ant2:
+                 self.client.publish('LUCES/TIPO2',estado_act1)
+            elif estado_act3!= estado_ant3:
+                self.client.publish('LUCES/TIPO3',estado_act1)
+            else:
+                pass
+            estado_ant1=estado_act1    
+            estado_ant2=estado_act2   
+            estado_ant3=estado_act3   
             sleep(0.4)
 
 
@@ -110,7 +132,6 @@ class FIREB():
         while True:
             act_S_VI = self.refvali.get() #peticion
             act_S_VR = self.refvalr.get()
-
             if prev_S_VI != act_S_VI:
                 print('VALVI = '+ str(act_S_VI))  
                 FLAGS_VALVS["VALVI"]=act_S_VI
@@ -123,20 +144,29 @@ class FIREB():
 
     def on_connect(self,client, userdata, flags, rc):
         print('connected (%s)' % client._client_id)
-        client.subscribe(topic='SENSOR1', qos=2)
+        client.subscribe(topic='cultivo/humedad_1', qos=2)
+        client.subscribe(topic='cultivo/humedad_2', qos=2)
+        client.subscribe(topic='cultivo/humedad_3', qos=2)
+        client.subscribe(topic='tanque/sens_1', qos=2)
+        client.subscribe(topic='tanque/sens_2', qos=2)
 
     def on_message(self,client, userdata, message):
-        print('------------------------------')
-        print('topic: %s' % message.topic)
-        print('payload: %s' % message.payload)
-        print('qos: %d' % message.qos)   
-        if(message.topic=="SENSOR1"):
+        if(message.topic=="cultivo/humedad_1"):
             print("llego", str(message.payload))
             self.sen=str(message.payload)
             self.refsens1.set(self.sen[2:len(self.sen)-1])
-
-
-
+        elif message.topic=="cultivo/humedad_1":
+            self.sen=str(message.payload)
+            self.refsens2.set(self.sen[2:len(self.sen)-1])
+        elif message.topic=="cultivo/humedad_2":
+            self.sen=str(message.payload)
+            self.refsens3.set(self.sen[2:len(self.sen)-1])
+        elif message.topic=="cultivo/humedad_3":
+            self.sen=str(message.payload)
+            self.refsn1.set(self.sen[2:len(self.sen)-1])
+        elif message.topic=="tanque/sens_1":
+            self.sen=str(message.payload)
+            pass
 
 
 def main():
@@ -151,6 +181,8 @@ def main():
     subproceso_luces = Thread(target=FB.LUCES)
     subproceso_luces.daemon = True
     subproceso_luces.start()
+
+
     signal.pause()
 
     print
