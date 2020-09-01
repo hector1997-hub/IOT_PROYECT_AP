@@ -146,16 +146,15 @@ class FIREB():
         prev_S_VI = self.refvali.get()
         prev_S_VR = self.refvalr.get()
         while True:
-            act_S_VI = self.refvali.get() #peticion
-            act_S_VR = self.refvalr.get()
-            if prev_S_VI != act_S_VI:
-                print('VALVI = '+ str(act_S_VI))  
-                FLAGS_C["VALVI"]=act_S_VI
-            if prev_S_VR != act_S_VR:  
-                print('VALVR = '+ str(act_S_VR))
-                FLAGS_C["VALVR"]=act_S_VI               
-            prev_S_VI=act_S_VI
-            prev_S_VR=act_S_VR 
+            if FLAGS_C["VALVI"]=="WR":
+                arch_riego=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","a")
+                mens_i=MENS_VALI.split(";")
+                arch_riego.write(str(datetime.now())+";"+MENS_VALI+';\n')
+                arch_riego.close
+                FLAGS_C["VALVI"]="ENABLE"        
+
+           #prev_S_VI=act_S_VI
+            #prev_S_VR=act_S_VR 
             sleep(0.1)
 
     def prescripcion(self):
@@ -170,7 +169,6 @@ class FIREB():
             if Haplic_a != Haplic :
                 if len(str(Haplic_a))>0 :
                    HORA_RIEGO=Haplic_a
-
             if A_presc_a != A_presc:  
                   FLAGS_C["RIEGO"]=A_presc_a  
                   if A_presc_a=="ON":
@@ -181,8 +179,17 @@ class FIREB():
                       var_met=var_met.split(";")
                       EVT=float(var_met[1])
                       Rain=float(var_met[2])
-                      RIEGO_A=25-EVT
-                      self.refpres.set(str(RIEGO_A))  
+
+                      arch_met=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","r")
+                      var_met=arch_met.readlines()
+                      arch_met.close()
+                      var_met=var_met[len(var_met)-1]
+                      var_met=var_met.split(";")
+                      last_irr=float(var_met[2])
+
+                      RIEGO_A=last_irr-EVT
+                      self.refpres.set(str(RIEGO_A)) 
+                      self.refactp.set(str("OFF")) 
 
             self.refhprog.set(HORA_RIEGO)
             Haplic= Haplic_a
@@ -254,16 +261,6 @@ class FIREB():
 
 
 
-    def final_riego(self):
-        global FLAGS_C,MENS_VALI
-        while True:
-            if FLAGS_C["VALVI"]=="WR":
-                arch_riego=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","a")
-                mens_i=MENS_VALI.split(";")
-                arch_riego.write(mens_i[0]+";"+datetime.now().day+';\n')
-                arch_riego.close
-                FLAGS_C["VALVI"]="ENABLE"
-            delay(0.2)    
 
     def LUCES(self):
         estado_ant1 = self.reftipo1.get()
@@ -299,6 +296,7 @@ def main():
     subproceso_RIEGO.daemon = True
     subproceso_RIEGO.start()
     
+
 
     subproceso_valvs = Thread(target=FB.VALVULAS)
     subproceso_valvs.daemon = True
