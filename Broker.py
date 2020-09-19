@@ -6,14 +6,15 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 from datetime import datetime 
+from datetime import date
 import ssl
 import paho.mqtt.client
 
 ###############FLAGS##################################
-
-FLAGS_C = {"VALVI":"FALSE","VALVR":"FALSE","LIGTH":"FALSE","RIEGO":"ON"}
+FLAGS_C = {"VALVI":"ENABLE","VALVR":"ENABLE","LIGTH":"FALSE","RIEGO":"OFF"}
 HORA_RIEGO="00:00"
 RIEGO_A=0.0
+RIEGO_AP=0.0
 FLUJO=20  #M/S
 MENS_VALI=""
 MENS_VALR=""
@@ -47,8 +48,8 @@ REF_FECHA='FECHA_RIEGO'
 REF_USER = 'USERS'
 REF_PASS1='PASSWORD1'
 REF_USER1='USER1'
-REF_VALVSI = 'VALVULAS_I'
-REF_VALVSR= 'VALVULAS_R'
+
+REF_VALVS = 'VALVULAS'
 REF_VAL1='VALVULA_I'
 REF_VAL2='VALVULA_R'
 #############################################################
@@ -102,11 +103,9 @@ class FIREB():
         self.refp_1=self.refsens_niv.child(REF_PASS1)
         self.refu_1=self.refuser.child(REF_USER1)
         
-        self.refvalvsi=self.refcultivo.child(REF_VALVSI) 
-        self.refvali=self.refvalvsi.child(REF_VAL1)
-
-        self.refvalvsr=self.refcultivo.child(REF_VALVSR) 
-        self.refvalr=self.refvalvsr.child(REF_VAL2)
+        self.refvalvs=self.refcultivo.child(REF_VALVS) 
+        self.refvali=self.refvalvs.child(REF_VAL1)
+        self.refvalr=self.refvalvs.child(REF_VAL2)
 
 
         self.client =paho.mqtt.client.Client(client_id='ESTACION_P', clean_session=False)
@@ -143,53 +142,100 @@ class FIREB():
 
 
     def VALVULAS(self):
-        prev_S_VI = self.refvali.get()
-        prev_S_VR = self.refvalr.get()
+        global FLAGS_C
+
+        prev_S_VI = "--"
+        prev_S_VR = "--"
+        today = date.today()
         while True:
-            if FLAGS_C["VALVI"]=="WR":
+            act_S_VI=self.refvali.get()
+            act_S_VR=self.refvalr.get()
+
+            if  act_S_VI !=  prev_S_VI:
+                print("valvula 1: "+ act_S_VI)
+                if act_S_VI=="OFF" and FLAGS_C["VALVI"] == "BUSSY":
+                    self.client.publish('VALV/VALV1',"OFF")
+                    FLAGS_C["VALVI"]="ENABLE" 
+                    self.refvali.set("OFF")
+                elif act_S_VI=="ON" and FLAGS_C["VALVI"] != "BUSSY":
+                    self.client.publish('VALV/VALV1',"ON_A")   
+                    FLAGS_C["VALVI"]="BUSSY"
+                    self.refvali.set("ON") 
+            elif  act_S_VR !=  prev_S_VR:
+                if act_S_VR=="OFF" and FLAGS_C["VALVR"] == "BUSSY":
+                    self.client.publish('VALV/VALV2',"OFF")
+                    FLAGS_C["VALVR"]="ENABLE"  
+                    self.refvalr.set("OFF")   
+                elif act_S_VR=="ON" and FLAGS_C["VALVR"] != "BUSSY":
+                    self.client.publish('VALV/VALV2',"ON_A")   
+                    FLAGS_C["VALVR"]="ENABLE"
+                    self.refvalr.set("OFF")
+            elif FLAGS_C["VALVI"]=="WR":
+                print("fin riego i")
                 arch_riego=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","a")
                 mens_i=MENS_VALI.split(";")
                 arch_riego.write(str(datetime.now())+";"+MENS_VALI+';\n')
                 arch_riego.close
-                FLAGS_C["VALVI"]="ENABLE"        
+                self.refferieg.set(str(today))
+                FLAGS_C["VALVI"]="ENABLE"
+                self.refvali.set("OFF")
+            elif FLAGS_C["VALVR"]=="WR":
+                print("fin riego r")
+                arch_riego=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","a")
+                mens_i=MENS_VALI.split(";")
+                arch_riego.write(str(datetime.now())+";"+MENS_VALI+';\n')
+                arch_riego.close
+                self.refferieg.set(str(today))
+                FLAGS_C["VALVR"]="ENABLE"             
+                self.refvalr.set("OFF")
 
-           #prev_S_VI=act_S_VI
-            #prev_S_VR=act_S_VR 
+
+            prev_S_VI=act_S_VI
+            prev_S_VR=act_S_VR 
             sleep(0.1)
 
     def prescripcion(self):
         global HORA_RIEGO
         global FLAGS_C
         global RIEGO_A
-        A_presc = self.refactp.get()
-        Haplic = self.refhora.get()
+        global RIEGO_AP
+        A_presc ="INIT"
+        Haplic = "--:--"
         while True:
             A_presc_a = self.refactp.get()
             Haplic_a = self.refhora.get()
-            if Haplic_a != Haplic :
-                if len(str(Haplic_a))>0 :
+            if len(str(Haplic_a))>0 :
                    HORA_RIEGO=Haplic_a
             if A_presc_a != A_presc:  
-                  FLAGS_C["RIEGO"]=A_presc_a  
-                  if A_presc_a=="ON":
-                      arch_met=open("/home/pi/IOT_PROYECT_AP/data_meterorologica.txt","r")
-                      var_met=arch_met.readlines()
-                      arch_met.close()
-                      var_met=var_met[len(var_met)-1]
-                      var_met=var_met.split(";")
-                      EVT=float(var_met[1])
-                      Rain=float(var_met[2])
+                FLAGS_C["RIEGO"]=A_presc_a  
+                if A_presc_a=="ON":
+                    if FLAGS_C["VALVI"] != "BUSSY" and FLAGS_C["VALVR"]!="BUSSY":
+                        arch_met=open("/home/pi/IOT_PROYECT_AP/data_meterorologica.txt","r")
+                        var_met=arch_met.readlines()
+                        arch_met.close()
+                        var_met=var_met[len(var_met)-1]
+                        var_met=var_met.split(";")
+                        EVT=float(var_met[1])
+                        Rain=float(var_met[2])
 
-                      arch_met=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","r")
-                      var_met=arch_met.readlines()
-                      arch_met.close()
-                      var_met=var_met[len(var_met)-1]
-                      var_met=var_met.split(";")
-                      last_irr=float(var_met[2])
-
-                      RIEGO_A=last_irr-EVT
-                      self.refpres.set(str(RIEGO_A)) 
-                      self.refactp.set(str("OFF")) 
+                        #ADQUIRIR HUMEDAD ACTUAL
+                        H1=float(self.refsens1.get())
+                        H2=float(self.refsens2.get())
+                        H3=float(self.refsens3.get())  
+                        CANT_H=(120*(H1+H2+H3))/300       #120mm TAMAÑO DE LOS SENSORES/ /3*100 PROMEDIO DE HUMEDAD  
+                        RIEGO_A=600-CANT_H-EVT
+                        RIEGO_AP=RIEGO_A
+                        if RIEGO_A>0:
+                            self.refpres.set(str(RIEGO_A)) 
+                        else:
+                            self.refpres.set(0.0)   
+                        
+                        self.refactp.set(str("OFF")) 
+                    else:
+                        self.refpres.set("APR")
+                        print("se esta regando")
+                        self.refpres.set(RIEGO_A) 
+                        RIEGO_AP=0 
 
             self.refhprog.set(HORA_RIEGO)
             Haplic= Haplic_a
@@ -200,29 +246,41 @@ class FIREB():
         global HORA_RIEGO
         global FLAGS_C
         global RIEGO_A
+        global RIEGO_AP
+        caudal=100000    #500mm/seg
         while True:
             now_time=str(datetime.now().hour)+":"+str(datetime.now().minute)
-
             if HORA_RIEGO=="18:25" :  
                 #print(HORA_RIEGO)
                 #print(FLAGS_C["RIEGO"])
-                if FLAGS_C["RIEGO"]=="ON":
+                if FLAGS_C["RIEGO"]=="ON" and RIEGO_AP>0:
                     sens_niv1= self.refsn1.get() #peticion
-                    sens_niv2 = self.refsn2.get() #peticion
-                    if  FLAGS_C["VALVI"]=="ENABLE": 
-                        if float(sens_niv1)>=25:
-                            print(RIEGO_A)
-                            self.client.publish('VALV/VALV1',"ON;"+str(RIEGO_A))
+                    sens_niv2 = self.refsn2.get() #peticio
+                    Volumen=3*RIEGO_AP*5000*5000  #500 es el tamaño de as materas
+                    TIME_R=round(Volumen/caudal)
+                    print("riego: "+ str(RIEGO_A)+ "mm")
+                    print("tiempo: "+ str(TIME_R)+ "s") 
+                    if float(sens_niv1)>=25: 
+                        if FLAGS_C["VALVI"]=="ENABLE":
+                            print("valvula principal")
                             FLAGS_C["VALVI"]="BUSSY"
-                        else:
-                            if float(sens_niv2>50):
-                                self.client.publish('VALV/VALV2',"ON;"+str(RIEGO_A))
+                            self.refvali.set("ON")
+                            self.client.publish('VALV/VALV1',"ON;"+str(TIME_R))
+                        else: 
+                            self.refactp.set(str("OFF")) 
+                            print("riego en ejecucion")   
+                    else:
+                        if float(sens_niv2)>=25 :
+                            if FLAGS_C["VALVR"]=="ENABLE":
+                                print("valvula de respaldo")
+                                self.client.publish('VALV/VALV2',"ON;"+str(TIME_R))
                                 FLAGS_C["VALVR"]="BUSSY"
-                                delay(3)
-                                self.client.publish('VALV/VALV1',"ON;"+str(RIEGO_A))
-                                FLAGS_C["VALVI"]="BUSSY"
-                            else:
-                                self.REF_FECHA.set("no agua")                        
+                                self.refvalr.set("ON")
+                            else: 
+                                self.refactp.set(str("OFF")) 
+                                print("riego en ejecucion")      
+                        else:
+                            self.refferieg.set("no agua")                        
             sleep(1)  
 
 
@@ -239,13 +297,15 @@ class FIREB():
     def on_message(self,client, userdata, message):
         global MENS_VALI
         if(message.topic=="cultivo/humedad_1"):
-           # print("llego", str(message.payload))
+            print("HUM1", str(message.payload))
             self.sen=str(message.payload)
             self.refsens1.set(self.sen[2:len(self.sen)-1])
-        elif message.topic=="cultivo/humedad_1":
+        elif message.topic=="cultivo/humedad_2":
+            print("HUM2", str(message.payload))
             self.sen=str(message.payload)
             self.refsens2.set(self.sen[2:len(self.sen)-1])
-        elif message.topic=="cultivo/humedad_2":
+        elif message.topic=="cultivo/humedad_3":
+            print("HUM3", str(message.payload))
             self.sen=str(message.payload)
             self.refsens3.set(self.sen[2:len(self.sen)-1])
         elif message.topic=="tanque/sens_1":
@@ -255,9 +315,15 @@ class FIREB():
             self.sen=str(message.payload)
             self.refsn2.set(self.sen[2:len(self.sen)-1])
         elif message.topic=="tanque/valvi":
-            mens_c=str(message.payload)
-            MENS_VALI=mens_c[2:(len(mens_c)-1)]
-            FLAGS_C["VALVI"]="WR"
+            if FLAGS_C["VALVI"]=="BUSSY":
+                mens_c=str(message.payload)
+                MENS_VALI=mens_c[2:(len(mens_c)-1)]
+                FLAGS_C["VALVI"]="WR"
+        elif message.topic=="tanque/valvr":
+            if FLAGS_C["VALVR"]=="BUSSY":
+                mens_c=str(message.payload)
+                MENS_VALI=mens_c[2:(len(mens_c)-1)]
+                FLAGS_C["VALVR"]="WR"    
 
 
 
@@ -311,7 +377,6 @@ def main():
 
     signal.pause()
 
-    print
 
     
 
