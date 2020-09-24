@@ -162,14 +162,15 @@ class FIREB():
                     FLAGS_C["VALVI"]="BUSSY"
                     self.refvali.set("ON") 
             elif  act_S_VR !=  prev_S_VR:
+                print("valvula 2: "+ act_S_VR)
                 if act_S_VR=="OFF" and FLAGS_C["VALVR"] == "BUSSY":
                     self.client.publish('VALV/VALV2',"OFF")
                     FLAGS_C["VALVR"]="ENABLE"  
                     self.refvalr.set("OFF")   
                 elif act_S_VR=="ON" and FLAGS_C["VALVR"] != "BUSSY":
                     self.client.publish('VALV/VALV2',"ON_A")   
-                    FLAGS_C["VALVR"]="ENABLE"
-                    self.refvalr.set("OFF")
+                    FLAGS_C["VALVR"]="BUSSY"
+                    self.refvalr.set("ON")
             elif FLAGS_C["VALVI"]=="WR":
                 print("fin riego i")
                 arch_riego=open("/home/pi/IOT_PROYECT_AP/data_riego.txt","a")
@@ -217,13 +218,12 @@ class FIREB():
                         var_met=var_met.split(";")
                         EVT=float(var_met[1])
                         Rain=float(var_met[2])
-
                         #ADQUIRIR HUMEDAD ACTUAL
                         H1=float(self.refsens1.get())
                         H2=float(self.refsens2.get())
                         H3=float(self.refsens3.get())  
-                        CANT_H=(120*(H1+H2+H3))/300       #120mm TAMAÑO DE LOS SENSORES/ /3*100 PROMEDIO DE HUMEDAD  
-                        RIEGO_A=600-CANT_H-EVT
+                        CANT_H=(50*(H1+H2+H3))/300       #50mm TAMAÑO DE LOS SENSORES/ /3*100 PROMEDIO DE HUMEDAD  
+                        RIEGO_A=60-CANT_H-EVT
                         RIEGO_AP=RIEGO_A
                         if RIEGO_A>0:
                             self.refpres.set(str(RIEGO_A)) 
@@ -247,16 +247,16 @@ class FIREB():
         global FLAGS_C
         global RIEGO_A
         global RIEGO_AP
-        caudal=100000    #500mm/seg
+        caudal=100000    #100000mm/seg
         while True:
             now_time=str(datetime.now().hour)+":"+str(datetime.now().minute)
-            if HORA_RIEGO=="18:25" :  
+            if HORA_RIEGO==now_time :  
                 #print(HORA_RIEGO)
                 #print(FLAGS_C["RIEGO"])
                 if FLAGS_C["RIEGO"]=="ON" and RIEGO_AP>0:
                     sens_niv1= self.refsn1.get() #peticion
-                    sens_niv2 = self.refsn2.get() #peticio
-                    Volumen=3*RIEGO_AP*5000*5000  #500 es el tamaño de as materas
+                    sens_niv2 = self.refsn2.get() #peticion
+                    Volumen=2*RIEGO_AP*5000*5000  #500 es el tamaño de as materas
                     TIME_R=round(Volumen/caudal)
                     print("riego: "+ str(RIEGO_A)+ "mm")
                     print("tiempo: "+ str(TIME_R)+ "s") 
@@ -297,21 +297,27 @@ class FIREB():
     def on_message(self,client, userdata, message):
         global MENS_VALI
         if(message.topic=="cultivo/humedad_1"):
-            print("HUM1", str(message.payload))
+            
             self.sen=str(message.payload)
-            self.refsens1.set(self.sen[2:len(self.sen)-1])
+            dato=round((100*float(self.sen[2:len(self.sen)-1]))/3.3,2)
+            print("HUM1", str(dato))
+            self.refsens1.set(dato)
         elif message.topic=="cultivo/humedad_2":
-            print("HUM2", str(message.payload))
             self.sen=str(message.payload)
-            self.refsens2.set(self.sen[2:len(self.sen)-1])
+            dato=round((100*float(self.sen[2:len(self.sen)-1]))/3.3,2)
+            print("HUM2", str(dato))
+            self.refsens2.set(dato)
         elif message.topic=="cultivo/humedad_3":
-            print("HUM3", str(message.payload))
             self.sen=str(message.payload)
-            self.refsens3.set(self.sen[2:len(self.sen)-1])
+            dato=round((100*float(self.sen[2:len(self.sen)-1]))/3.3,2)
+            print("HUM3", str(dato))
+            self.refsens3.set(dato)
         elif message.topic=="tanque/sens_1":
+            print("sens nivel 1:", str(message.payload))
             self.sen=str(message.payload)
             self.refsn1.set(self.sen[2:len(self.sen)-1])
         elif message.topic=="tanque/sens_2":
+            print("sens nivel 2:", str(message.payload))
             self.sen=str(message.payload)
             self.refsn2.set(self.sen[2:len(self.sen)-1])
         elif message.topic=="tanque/valvi":
